@@ -1,0 +1,238 @@
+{
+  "users": {
+    "@burnboom": {
+      "handle": "@burnboom",
+      "email": null,
+      "password_hash": null,
+      "bio": "",
+      "followers": [],
+      "following": [],
+      "stats": {
+        "posts": 0,
+        "likes_received": 0
+      },
+      "created": "2025-11-21 16:51"
+    },
+    "@david": {
+      "handle": "@david",
+      "email": null,
+      "password_hash": null,
+      "bio": "",
+      "followers": [],
+      "following": [],
+      "stats": {
+        "posts": 0,
+        "likes_received": 0
+      },
+      "created": "2025-11-21 16:51"
+    },
+    "@leo": {
+      "handle": "@leo",
+      "email": "uzl4061@edu.kunskapsskolan.se",
+      "password_hash": "scrypt:32768:8:1$Oko67KjKCJPwxF5n$1ebd595d8718c1e3de659990961d9b9762569997f7406c6a0c8e64011706ae8ba3e5c08f7fd7c1537a81ec8bae8d9112b13ad8bca6fdc2e3f5e048e74df812c4",
+      "bio": "The creator of Kconnect",
+      "followers": [
+        "@guest"
+      ],
+      "following": [
+        "@guest"
+      ],
+      "stats": {
+        "posts": 10,
+        "likes_received": 1
+      },
+      "created": "2025-11-21 16:55"
+    },
+    "@alice": {
+      "handle": "@alice",
+      "email": null,
+      "password_hash": null,
+      "bio": "",
+      "followers": [],
+      "following": [],
+      "stats": {
+        "posts": 0,
+        "likes_received": 0
+      },
+      "created": "2025-11-21 17:24"
+    },
+    "@guest": {
+      "handle": "@guest",
+      "email": "uz4061@edu.kunskapsskolan.se",
+      "password_hash": "scrypt:32768:8:1$mmnzFKzEM59SzHVl$b033afc589f1a67644482dc51f4ca1d4dd88a291f8a53a108cc141da77e62237a3aa5a0d2d495bdac160475ffa476020b0cf055b23025ffb4fa6e9e6535e453b",
+      "bio": "",
+      "followers": [
+        "@leo"
+      ],
+      "following": [
+        "@leo"
+      ],
+      "stats": {
+        "posts": 0,
+        "likes_received": 0
+      },
+      "created": "2025-11-22 11:29:02"
+    },
+    "@bob": {
+      "handle": "@bob",
+      "email": null,
+      "password_hash": null,
+      "bio": "",
+      "followers": [],
+      "following": [],
+      "stats": {
+        "posts": 0,
+        "likes_received": 0
+      },
+      "created": "2025-11-22 11:33:50"
+    }
+  },
+  "posts": [
+    {
+      "user": "@leo",
+      "text": "",
+      "image": "20251122113409_Skapa_en_bild_av_en_stadssiluett_i_skymningen.jpg",
+      "time": "2025-11-22 11:34:09",
+      "likes": 0,
+      "liked_by": [],
+      "comments": []
+    },
+    {
+      "user": "@leo",
+      "text": "Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Hello",
+      "image": null,
+      "time": "2025-11-22 11:33:11",
+      "likes": 0,
+      "liked_by": [],
+      "comments": []
+    },
+    {
+      "user": "@leo",
+      "text": "Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Hello",
+      "image": null,
+      "time": "2025-11-22 11:33:11",
+      "likes": 0,
+      "liked_by": [],
+      "comments": []
+    },
+    {
+      "user": "@leo",
+      "text": "Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Hello",
+      "image": null,
+      "time": "2025-11-22 11:33:10",
+      "likes": 0,
+      "liked_by": [],
+      "comments": []
+    },
+    {
+      "user": "@leo",
+      "text": "Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Hello",
+      "image": null,
+      "time": "2025-11-22 11:33:10",
+      "likes": 0,
+      "liked_by": [],
+      "comments": []
+    },
+    {
+      "user": "@leo",
+      "text": "Shared from @leo: Shared from @leo: Shared from @leo: Shared from @leo: Hello",
+      "image": null,
+      "time": "2025-11-22 11:33:10",
+      "likes": 0,
+      "liked_by": [],
+      "comments": []
+    },
+    {
+      "user": "@leo",
+      "text": "Shared from @leo: Shared from @leo: Shared from @leo: Hello",
+      "image": null,
+      "time": "2025-11-22 11:33:09",
+      "likes": 0,
+      "liked_by": [],
+      "comments": []
+    },
+    {
+      "user": "@leo",
+      "text": "Shared from @leo: Shared from @leo: Hello",
+      "image": null,
+      "time": "2025-11-22 11:32:59",
+      "likes": 0,
+      "liked_by": [],
+      "comments": []
+    },
+    {
+      "user": "@leo",
+      "text": "Shared from @leo: Hello",
+      "image": null,
+      "time": "2025-11-22 11:32:54",
+      "likes": 0,
+      "liked_by": [],
+      "comments": []
+    },
+    {
+      "user": "@leo",
+      "text": "Hello",
+      "image": null,
+      "time": "2025-11-22 11:32:38",
+      "likes": 1,
+      "liked_by": [
+        "@leo"
+      ],
+      "comments": []
+    }
+  ],
+  "messages": {
+    "@alice__@leo": [
+      {
+        "sender": "@leo",
+        "recipient": "@alice",
+        "text": "hello",
+        "time": "2025-11-21 17:29:45"
+      },
+      {
+        "sender": "@leo",
+        "recipient": "@alice",
+        "text": "hello",
+        "time": "2025-11-21 17:29:51"
+      },
+      {
+        "sender": "@leo",
+        "recipient": "@alice",
+        "text": "skibidi",
+        "time": "2025-11-21 17:30:01"
+      }
+    ],
+    "@guest__@leo": [
+      {
+        "sender": "@leo",
+        "recipient": "@guest",
+        "text": "hello",
+        "time": "2025-11-22 11:46:43"
+      },
+      {
+        "sender": "@leo",
+        "recipient": "@guest",
+        "text": "Heeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeellllllllllllllllllllllllllllllllllllllloooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo",
+        "time": "2025-11-22 11:46:57"
+      },
+      {
+        "sender": "@leo",
+        "recipient": "@guest",
+        "text": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhheeeeeeeeeeeeeeeee",
+        "time": "2025-11-22 11:47:09"
+      },
+      {
+        "sender": "@leo",
+        "recipient": "@guest",
+        "text": "helllllllllloo",
+        "time": "2025-11-22 11:47:18"
+      },
+      {
+        "sender": "@guest",
+        "recipient": "@leo",
+        "text": "helllllo",
+        "time": "2025-11-22 12:06:37"
+      }
+    ]
+  }
+}
