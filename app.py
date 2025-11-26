@@ -172,6 +172,15 @@ def find_user_by_email(email_lower):
 def index():
     return render_template("index.html", user=session.get("user"))
 
+@app.route("/profile")
+@login_required
+def my_profile():
+    # Redirect to the profile page for the currently signed-in user
+    user = session.get("user")
+    if not user:
+        return redirect(url_for("index"))
+    return redirect(url_for("profile", user=user))
+
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
