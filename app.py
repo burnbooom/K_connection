@@ -1,12 +1,19 @@
 # app.py
 """
-Flask app (single-file) with SQLite backend.
-This variant fixes the "My profile" behavior:
-- /profile redirects to the signed-in user's profile
-- /profile/<user> renders the requested profile and will create a minimal user record if missing
-- session["user"] is normalized (always starts with @) at signup/login
-- defensive checks and logging added to help diagnose issues
-Keep templates in templates/ and static files in static/.
+Flask application with SQLite backend.
+This version is defensive about profile routing so clicking "My profile"
+always goes to the correct /profile/<user> page and does not silently
+redirect back to the feed.
+
+Features:
+- Signup / Login / Logout (email domain restriction)
+- Feed: create posts with optional image, like, comment, share
+- Profiles and profile editing (email domain enforced)
+- Follow / Unfollow
+- Private chat between users
+- File uploads served from static/uploads
+- Debug endpoints for inspection and reset (remove or protect in production)
+- SQLite DB stored at data/app.db (data/ folder created automatically)
 """
 
 import os
@@ -204,7 +211,7 @@ def signup():
             (handle, email, pw_hash, "", now)
         )
         db.commit()
-        session["user"] = handle  # normalized
+        session["user"] = handle
         app.logger.debug("New signup: %s (email=%s)", handle, email)
         flash("Account created and signed in", "success")
         return redirect(url_for("feed"))
@@ -246,9 +253,7 @@ def login():
             flash("Incorrect password", "danger")
             return redirect(url_for("login"))
 
-        # ensure session user is normalized handle
-        handle = row["handle"]
-        handle = normalize_handle(handle)
+        handle = normalize_handle(row["handle"])
         session["user"] = handle
         app.logger.debug("User signed in: %s", handle)
         flash("Signed in", "success")
@@ -277,6 +282,8 @@ def my_profile():
     user = session.get("user")
     if not user:
         return redirect(url_for("index"))
+    # ensure normalized and present
+    user = normalize_handle(user)
     return redirect(url_for("profile", user=user))
 
 # ---------------- Feed and posts ----------------
