@@ -1,18 +1,16 @@
 # app.py
 """
-Flask app converted from a data.json backend to SQLite.
-Features preserved:
-- Signup / Login / Logout (email domain restriction)
-- Feed: create posts with optional image, like, comment, share
-- Profiles and profile editing (email domain enforced)
-- Follow / Unfollow
-- Private chat between users
-- File uploads served from static/uploads
-- Debug endpoints for inspection and reset (remove or protect in production)
-- SQLite DB stored at data/app.db (data/ folder created automatically)
+Flask + SQLite social demo (robust profile handling).
+This file is a corrected, defensive version of your app that:
+- Normalizes handles everywhere
+- Avoids modifying session in profile view
+- Logs and returns friendly errors instead of crashing on profile views
+- Keeps the same features: signup/login, feed, posts, likes, comments, share,
+  follow/unfollow, chat, uploads, debug endpoints
 Notes:
-- Set FLASK_SECRET in environment for production sessions.
-- On ephemeral hosts (Render) attach persistent storage or use a managed DB.
+- DB file: data/app.db
+- Uploads: static/uploads
+- Set FLASK_SECRET in environment for production
 """
 
 import os
@@ -23,7 +21,7 @@ from datetime import datetime
 from functools import wraps
 from flask import (
     Flask, render_template, request, redirect, url_for, session,
-    send_from_directory, flash, jsonify, g, abort
+    send_from_directory, flash, jsonify, g
 )
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -167,11 +165,6 @@ def ensure_user_on_db(handle):
     db.commit()
     app.logger.debug("Created minimal user record for %s", handle)
 
-def posts_count():
-    db = get_db()
-    cur = db.execute("SELECT COUNT(*) as c FROM posts")
-    return cur.fetchone()["c"]
-
 # ---------- Routes: landing / auth ----------
 @app.route("/")
 def index():
@@ -279,6 +272,7 @@ def forgot():
 
 # ---------- Feed (following or global toggle) ----------
 @app.route("/feed", methods=["GET", "POST"])
+@login_required
 def feed():
     user = session.get("user")
     if user is None:
@@ -317,7 +311,6 @@ def feed():
     if show_global:
         rows_to_show = rows
     else:
-        cur = db.execute("SELECT following FROM users JOIN follows ON users.handle = follows.follower WHERE users.handle = ?", (user,))
         following_rows = db.execute("SELECT following FROM follows WHERE follower = ?", (user,)).fetchall()
         following = {r["following"] for r in following_rows}
         following.add(user)
@@ -358,10 +351,9 @@ def feed():
 
 # ---------- Post interactions ----------
 @app.route("/like/<int:post_id>", methods=["POST"])
+@login_required
 def like_post(post_id):
     user = session.get("user")
-    if user is None:
-        return redirect(url_for("index"))
     db = get_db()
     cur = db.execute("SELECT liked_by, likes, user_handle FROM posts WHERE id = ?", (post_id,))
     row = cur.fetchone()
@@ -377,10 +369,9 @@ def like_post(post_id):
     return redirect(url_for("feed"))
 
 @app.route("/comment/<int:post_id>", methods=["POST"])
+@login_required
 def comment_post(post_id):
     user = session.get("user")
-    if user is None:
-        return redirect(url_for("index"))
     comment = request.form.get("comment", "").strip()
     if not comment:
         return redirect(url_for("feed"))
@@ -396,10 +387,9 @@ def comment_post(post_id):
     return redirect(url_for("feed"))
 
 @app.route("/share/<int:post_id>", methods=["POST"])
+@login_required
 def share_post(post_id):
     user = session.get("user")
-    if user is None:
-        return redirect(url_for("index"))
     db = get_db()
     cur = db.execute("SELECT user_handle, text, image FROM posts WHERE id = ?", (post_id,))
     row = cur.fetchone()
@@ -418,45 +408,61 @@ def share_post(post_id):
 # ---------- Profile (safe: does NOT set session) ----------
 @app.route("/profile/<user>")
 def profile(user):
-    ensure_user_on_db(user)
-    db = get_db()
-    cur = db.execute("SELECT id, user_handle, text, image, time, likes, liked_by, comments FROM posts WHERE user_handle = ? ORDER BY id DESC", (user,))
-    posts = []
-    for r in cur.fetchall():
-        posts.append({
-            "id": r["id"],
-            "user": r["user_handle"],
-            "text": r["text"],
-            "image": r["image"],
-            "time": r["time"],
-            "likes": r["likes"],
-            "liked_by": json.loads(r["liked_by"] or "[]"),
-            "comments": json.loads(r["comments"] or "[]")
-        })
-    cur = db.execute("SELECT handle, email, bio, created, stats_posts, stats_likes_received FROM users WHERE handle = ?", (user,))
-    row = cur.fetchone()
-    record = dict(row) if row else {}
-    return render_template("profile.html", user=user, posts=posts, record=record)
+    """
+    Defensive profile view:
+    - normalize incoming handle
+    - ensure DB record exists (creates minimal record if missing)
+    - fetch posts and user record
+    - log and show friendly message on unexpected errors
+    """
+    try:
+        if not user:
+            flash("Invalid profile requested", "danger")
+            return redirect(url_for("feed"))
+
+        user = normalize_handle(user)
+        ensure_user_on_db(user)
+
+        db = get_db()
+        cur = db.execute("SELECT id, user_handle, text, image, time, likes, liked_by, comments FROM posts WHERE user_handle = ? ORDER BY id DESC", (user,))
+        posts = []
+        for r in cur.fetchall():
+            posts.append({
+                "id": r["id"],
+                "user": r["user_handle"],
+                "text": r["text"],
+                "image": r["image"],
+                "time": r["time"],
+                "likes": r["likes"],
+                "liked_by": json.loads(r["liked_by"] or "[]"),
+                "comments": json.loads(r["comments"] or "[]")
+            })
+
+        cur = db.execute("SELECT handle, email, bio, created, stats_posts, stats_likes_received FROM users WHERE handle = ?", (user,))
+        row = cur.fetchone()
+        record = dict(row) if row else {"handle": user, "email": None, "bio": "", "created": now_str(), "stats_posts": 0, "stats_likes_received": 0}
+
+        return render_template("profile.html", user=user, posts=posts, record=record)
+    except Exception as exc:
+        app.logger.exception("Error rendering profile for %s: %s", user, exc)
+        flash("Sorry — something went wrong loading that profile. The error has been logged.", "danger")
+        # Redirect to feed rather than raising a 500 so user isn't stuck
+        return redirect(url_for("feed"))
 
 # ---------- Profile edit ----------
 @app.route("/profile/edit", methods=["GET"])
+@login_required
 def edit_profile():
     me = session.get("user")
-    if me is None:
-        flash("You must be signed in to edit your profile", "danger")
-        return redirect(url_for("login"))
     db = get_db()
     cur = db.execute("SELECT email, bio FROM users WHERE handle = ?", (me,))
     record = cur.fetchone()
     return render_template("edit_profile.html", user=me, record=record, required_domain=REQUIRED_EMAIL_DOMAIN)
 
 @app.route("/profile/edit", methods=["POST"])
+@login_required
 def edit_profile_post():
     me = session.get("user")
-    if me is None:
-        flash("You must be signed in to edit your profile", "danger")
-        return redirect(url_for("login"))
-
     new_email = request.form.get("email", "").strip()
     new_bio = request.form.get("bio", "").strip()
     new_password = request.form.get("password", "")
@@ -496,10 +502,10 @@ def edit_profile_post():
 
 # ---------- Follow / Unfollow ----------
 @app.route("/follow/<user>", methods=["POST"])
+@login_required
 def follow(user):
     me = session.get("user")
-    if me is None:
-        return redirect(url_for("index"))
+    user = normalize_handle(user)
     db = get_db()
     db.execute("INSERT OR IGNORE INTO follows (follower, following) VALUES (?, ?)", (me, user))
     db.commit()
@@ -508,10 +514,10 @@ def follow(user):
     return redirect(url_for("profile", user=user))
 
 @app.route("/unfollow/<user>", methods=["POST"])
+@login_required
 def unfollow(user):
     me = session.get("user")
-    if me is None:
-        return redirect(url_for("index"))
+    user = normalize_handle(user)
     db = get_db()
     db.execute("DELETE FROM follows WHERE follower = ? AND following = ?", (me, user))
     db.commit()
@@ -521,10 +527,10 @@ def unfollow(user):
 
 # ---------- Chat ----------
 @app.route("/chat/<user>", methods=["GET"])
+@login_required
 def chat(user):
     current = session.get("user")
-    if current is None:
-        return redirect(url_for("index"))
+    user = normalize_handle(user)
     ensure_user_on_db(user)
     db = get_db()
     key = convo_key(current, user)
@@ -548,14 +554,14 @@ def chat(user):
     return render_template("chat.html", user=user, messages=msgs, recent_chats=recent_chats)
 
 @app.route("/send_message", methods=["POST"])
+@login_required
 def send_message():
     sender = session.get("user")
-    if sender is None:
-        return redirect(url_for("index"))
     to_user = request.form.get("to", "").strip()
     text = request.form.get("text", "").strip()
     if not to_user or not text:
         return redirect(url_for("chat", user=to_user or sender))
+    to_user = normalize_handle(to_user)
     ensure_user_on_db(to_user)
     db = get_db()
     key = convo_key(sender, to_user)
