@@ -1,17 +1,12 @@
 # app.py
 """
-Complete Flask application with SQLite backend and the following features:
-- Signup / Login / Logout (email domain restriction)
-- Feed: create posts with optional image, like, comment, share
-- Profiles and profile editing (email domain enforced)
-- Follow / Unfollow
-- Private chat between users
-- File uploads served from static/uploads
-- Debug endpoints for inspection and reset (remove or protect in production)
-- SQLite DB stored at data/app.db (data/ folder created automatically)
-Notes:
-- Set FLASK_SECRET in environment for production sessions.
-- On Render the filesystem is ephemeral unless you attach persistent storage.
+Flask app (single-file) with SQLite backend.
+This variant fixes the "My profile" behavior:
+- /profile redirects to the signed-in user's profile
+- /profile/<user> renders the requested profile and will create a minimal user record if missing
+- session["user"] is normalized (always starts with @) at signup/login
+- defensive checks and logging added to help diagnose issues
+Keep templates in templates/ and static files in static/.
 """
 
 import os
@@ -21,7 +16,7 @@ from datetime import datetime
 from functools import wraps
 from flask import (
     Flask, g, render_template, request, redirect, url_for, session,
-    send_from_directory, flash, jsonify, abort
+    send_from_directory, flash, jsonify
 )
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -65,7 +60,6 @@ def close_db(exc):
         g._db = None
 
 def init_db():
-    """Create tables to mirror the JSON-backed app features."""
     db = get_db()
     cur = db.cursor()
     cur.execute("""
@@ -152,7 +146,6 @@ def login_required(f):
 
 # ---------------- User helpers ----------------
 def ensure_user_exists(handle):
-    """Create a minimal user record if missing (used when viewing profiles or messaging)."""
     if not handle:
         return
     handle = normalize_handle(handle)
@@ -161,17 +154,14 @@ def ensure_user_exists(handle):
     if cur.fetchone():
         return
     now = now_str()
-    db.execute(
-        "INSERT INTO users (handle, created_at, bio) VALUES (?, ?, ?)",
-        (handle, now, "")
-    )
+    db.execute("INSERT INTO users (handle, created_at, bio) VALUES (?, ?, ?)", (handle, now, ""))
     db.commit()
+    app.logger.debug("Created minimal user record for %s", handle)
 
 def find_user_by_email(email_lower):
     db = get_db()
     cur = db.execute("SELECT handle, email, password_hash, bio FROM users WHERE lower(email) = ?", (email_lower,))
-    row = cur.fetchone()
-    return row
+    return cur.fetchone()
 
 # ---------------- Routes: auth & landing ----------------
 @app.route("/")
@@ -214,7 +204,8 @@ def signup():
             (handle, email, pw_hash, "", now)
         )
         db.commit()
-        session["user"] = handle
+        session["user"] = handle  # normalized
+        app.logger.debug("New signup: %s (email=%s)", handle, email)
         flash("Account created and signed in", "success")
         return redirect(url_for("feed"))
     return render_template("signup.html", required_domain=REQUIRED_EMAIL_DOMAIN)
@@ -255,7 +246,11 @@ def login():
             flash("Incorrect password", "danger")
             return redirect(url_for("login"))
 
-        session["user"] = row["handle"]
+        # ensure session user is normalized handle
+        handle = row["handle"]
+        handle = normalize_handle(handle)
+        session["user"] = handle
+        app.logger.debug("User signed in: %s", handle)
         flash("Signed in", "success")
         return redirect(url_for("feed"))
     return render_template("login.html")
@@ -464,6 +459,7 @@ def profile(user):
         flash("Sorry — something went wrong loading that profile. The error has been logged.", "danger")
         return redirect(url_for("feed"))
 
+# ---------------- Profile edit ----------------
 @app.route("/profile/edit", methods=["GET", "POST"])
 @login_required
 def edit_profile():
