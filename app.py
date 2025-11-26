@@ -1,4 +1,20 @@
 # app.py
+"""
+Flask application with SQLite backend.
+Features:
+- Signup / Login / Logout (email domain restriction)
+- Feed: create posts with optional image, like, comment, share
+- Profiles and profile editing (email domain enforced)
+- Follow / Unfollow
+- Private chat between users
+- File uploads served from static/uploads
+- Debug endpoints for inspection and reset (remove or protect in production)
+- SQLite DB stored at data/app.db (create data/ folder automatically)
+Notes:
+- Set FLASK_SECRET in environment for production sessions.
+- On Render, attach persistent storage or use a managed DB for persistence.
+"""
+
 import os
 import json
 import sqlite3
@@ -50,10 +66,9 @@ def close_db(exc):
         g._db = None
 
 def init_db():
-    """Create tables to mirror the features of the JSON-backed app."""
+    """Create tables to mirror the JSON-backed app features."""
     db = get_db()
     cur = db.cursor()
-    # users table
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +81,6 @@ def init_db():
       stats_likes_received INTEGER DEFAULT 0
     );
     """)
-    # posts table (liked_by and comments stored as JSON text)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS posts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,7 +93,6 @@ def init_db():
       comments TEXT DEFAULT '[]'
     );
     """)
-    # messages table
     cur.execute("""
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,7 +103,6 @@ def init_db():
       time TEXT NOT NULL
     );
     """)
-    # follows table
     cur.execute("""
     CREATE TABLE IF NOT EXISTS follows (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,7 +113,6 @@ def init_db():
     """)
     db.commit()
 
-# Initialize DB at startup
 with app.app_context():
     init_db()
 
@@ -156,7 +167,7 @@ def find_user_by_email(email_lower):
     row = cur.fetchone()
     return row
 
-# ---------------- Auth routes ----------------
+# ---------------- Routes: auth & landing ----------------
 @app.route("/")
 def index():
     return render_template("index.html", user=session.get("user"))
@@ -181,12 +192,10 @@ def signup():
         handle = handle_raw if handle_raw.startswith("@") else "@" + handle_raw
 
         db = get_db()
-        # check handle
         cur = db.execute("SELECT id FROM users WHERE handle = ?", (handle,))
         if cur.fetchone():
             flash("Handle already exists", "danger")
             return redirect(url_for("signup"))
-        # check email
         cur = db.execute("SELECT id FROM users WHERE lower(email) = ?", (email.lower(),))
         if cur.fetchone():
             flash("Email already registered", "danger")
@@ -214,7 +223,6 @@ def login():
             return redirect(url_for("login"))
 
         db = get_db()
-        # try email lookup
         row = None
         if "@" in identifier:
             row = find_user_by_email(identifier.lower())
@@ -252,7 +260,7 @@ def logout():
     flash("Signed out", "info")
     return redirect(url_for("index"))
 
-# ---------- Forgot (placeholder) ----------
+# ---------------- Forgot placeholder ----------------
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot():
     if request.method == "POST":
@@ -290,7 +298,6 @@ def feed():
             db.commit()
         return redirect(url_for("feed"))
 
-    # GET: build posts list (global or following)
     show_global = request.args.get("global") == "1"
     posts = []
     cur = db.execute("SELECT * FROM posts ORDER BY id DESC")
@@ -298,9 +305,8 @@ def feed():
     if show_global:
         rows_to_show = rows
     else:
-        # build following set
-        cur = db.execute("SELECT following FROM follows WHERE follower = ?", (me,))
-        following = {r["following"] for r in db.execute("SELECT following FROM follows WHERE follower = ?", (me,)).fetchall()}
+        following_rows = db.execute("SELECT following FROM follows WHERE follower = ?", (me,)).fetchall()
+        following = {r["following"] for r in following_rows}
         following.add(me)
         rows_to_show = [r for r in rows if r["user_handle"] in following]
 
@@ -316,7 +322,6 @@ def feed():
             "comments": json.loads(r["comments"] or "[]")
         })
 
-    # recent chats for sidebar
     recent_chats = []
     cur = db.execute("SELECT convo_key, sender, recipient, text, time FROM messages ORDER BY id DESC")
     seen = set()
@@ -332,7 +337,6 @@ def feed():
         recent_chats.append({"user": other, "last_time": r["time"], "preview": (r["text"] or "")[:80]})
     recent_chats = sorted(recent_chats, key=lambda x: x.get("last_time") or "", reverse=True)
 
-    # following list
     following = [r["following"] for r in db.execute("SELECT following FROM follows WHERE follower = ?", (me,)).fetchall()]
 
     return render_template("feed.html", posts=posts, following=following, recent_chats=recent_chats, show_global=show_global)
@@ -352,7 +356,6 @@ def like_post(post_id):
         liked_by.append(me)
         likes = (row["likes"] or 0) + 1
         db.execute("UPDATE posts SET liked_by = ?, likes = ? WHERE id = ?", (json.dumps(liked_by), likes, post_id))
-        # increment poster's likes_received
         db.execute("UPDATE users SET stats_likes_received = stats_likes_received + 1 WHERE handle = ?", (row["user_handle"],))
         db.commit()
     return redirect(url_for("feed"))
@@ -434,12 +437,10 @@ def edit_profile():
             flash("Password must be at least 6 characters", "danger")
             return redirect(url_for("edit_profile"))
 
-        # email domain check
         if new_email:
             if not email_has_allowed_domain(new_email):
                 flash(f"Email must be within the {REQUIRED_EMAIL_DOMAIN} domain", "danger")
                 return redirect(url_for("edit_profile"))
-            # ensure uniqueness
             cur = db.execute("SELECT handle FROM users WHERE lower(email) = ? AND handle != ?", (new_email.lower(), me))
             if cur.fetchone():
                 flash("That email is already used by another account", "danger")
@@ -495,7 +496,6 @@ def chat(user):
     key = convo_key(me, user)
     cur = db.execute("SELECT sender, recipient, text, time FROM messages WHERE convo_key = ? ORDER BY id ASC", (key,))
     msgs = [dict(r) for r in cur.fetchall()]
-    # recent chats
     recent_chats = []
     cur = db.execute("SELECT convo_key, sender, recipient, text, time FROM messages ORDER BY id DESC")
     seen = set()
@@ -542,7 +542,6 @@ def uploaded_file(filename):
 @app.route("/_debug/data", methods=["GET"])
 def _debug_data():
     db = get_db()
-    # basic info
     users = [r["handle"] for r in db.execute("SELECT handle FROM users").fetchall()]
     posts_count = db.execute("SELECT COUNT(*) as c FROM posts").fetchone()["c"]
     messages_keys = [r["convo_key"] for r in db.execute("SELECT DISTINCT convo_key FROM messages ORDER BY id DESC LIMIT 20").fetchall()]
@@ -557,12 +556,10 @@ def _debug_data():
 @app.route("/_debug/reset_data", methods=["POST"])
 def _debug_reset_data():
     try:
-        # backup existing DB
         if os.path.exists(DB_PATH):
             backup = DB_PATH + ".bak"
             os.replace(DB_PATH, backup)
             app.logger.info("Backed up DB to %s", backup)
-        # re-init DB
         with app.app_context():
             init_db()
         return "reset", 200
@@ -602,4 +599,13 @@ def bootstrap_if_requested():
                    (h, f"{h[1:]}@{REQUIRED_EMAIL_DOMAIN}", generate_password_hash("password123"), "", now))
     db.execute(
         "INSERT INTO posts (user_handle, text, image, time, likes, liked_by, comments) VALUES (?, ?, ?, ?, 2, ?, ?)",
-        ("@alice", "Hello world!", None, now
+        ("@alice", "Hello world!", None, now, json.dumps(["@bob", "@charlie"]), json.dumps(["@bob: Nice!", "@charlie: 👋"]))
+    )
+    db.commit()
+    app.logger.info("Bootstrap demo data created")
+
+# ---------------- Run server ----------------
+if __name__ == "__main__":
+    bootstrap_if_requested()
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "0") == "1")
