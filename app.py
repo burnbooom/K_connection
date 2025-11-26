@@ -1,19 +1,17 @@
 # app.py
 """
-Flask application with SQLite backend.
-This version is defensive about profile routing so clicking "My profile"
-always goes to the correct /profile/<user> page and does not silently
-redirect back to the feed.
-
-Features:
-- Signup / Login / Logout (email domain restriction)
-- Feed: create posts with optional image, like, comment, share
-- Profiles and profile editing (email domain enforced)
-- Follow / Unfollow
-- Private chat between users
-- File uploads served from static/uploads
-- Debug endpoints for inspection and reset (remove or protect in production)
-- SQLite DB stored at data/app.db (data/ folder created automatically)
+Robust Flask app with SQLite backend.
+This version addresses the "My profile" redirect issue and includes:
+- Normalized session["user"] (always starts with @)
+- /profile redirect to signed-in user's profile
+- Defensive /profile/<user> route that never silently redirects to feed
+- Signup/login that set and log session user
+- Feed, posts, likes, comments, share, follow/unfollow, chat
+- Debug endpoints for inspection and reset (remove in production)
+- SQLite DB at data/app.db (data/ folder created automatically)
+Notes:
+- Set FLASK_SECRET in environment for production sessions.
+- On ephemeral hosts (Render), attach persistent storage or use a managed DB.
 """
 
 import os
@@ -211,8 +209,10 @@ def signup():
             (handle, email, pw_hash, "", now)
         )
         db.commit()
-        session["user"] = handle
-        app.logger.debug("New signup: %s (email=%s)", handle, email)
+
+        # normalize and set session user
+        session["user"] = normalize_handle(handle)
+        app.logger.debug("session['user'] set to: %r (signup)", session.get("user"))
         flash("Account created and signed in", "success")
         return redirect(url_for("feed"))
     return render_template("signup.html", required_domain=REQUIRED_EMAIL_DOMAIN)
@@ -253,9 +253,10 @@ def login():
             flash("Incorrect password", "danger")
             return redirect(url_for("login"))
 
+        # set normalized session user
         handle = normalize_handle(row["handle"])
         session["user"] = handle
-        app.logger.debug("User signed in: %s", handle)
+        app.logger.debug("session['user'] set to: %r (login)", session.get("user"))
         flash("Signed in", "success")
         return redirect(url_for("feed"))
     return render_template("login.html")
@@ -282,7 +283,6 @@ def my_profile():
     user = session.get("user")
     if not user:
         return redirect(url_for("index"))
-    # ensure normalized and present
     user = normalize_handle(user)
     return redirect(url_for("profile", user=user))
 
