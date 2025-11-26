@@ -19,7 +19,7 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads")
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif"}
 
 # Domain restriction for signups and email changes
-REQUIRED_EMAIL_DOMAIN = "edu.kunskapsskolan"
+REQUIRED_EMAIL_DOMAIN = "edu.kunskapsskolan.se"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
