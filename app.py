@@ -1,7 +1,6 @@
 # app.py
 """
-Flask application with SQLite backend.
-Features:
+Complete Flask application with SQLite backend and the following features:
 - Signup / Login / Logout (email domain restriction)
 - Feed: create posts with optional image, like, comment, share
 - Profiles and profile editing (email domain enforced)
@@ -9,10 +8,10 @@ Features:
 - Private chat between users
 - File uploads served from static/uploads
 - Debug endpoints for inspection and reset (remove or protect in production)
-- SQLite DB stored at data/app.db (create data/ folder automatically)
+- SQLite DB stored at data/app.db (data/ folder created automatically)
 Notes:
 - Set FLASK_SECRET in environment for production sessions.
-- On Render, attach persistent storage or use a managed DB for persistence.
+- On Render the filesystem is ephemeral unless you attach persistent storage.
 """
 
 import os
@@ -127,6 +126,12 @@ def convo_key(a, b):
     pair = sorted([a, b])
     return f"{pair[0]}__{pair[1]}"
 
+def normalize_handle(h):
+    if not h:
+        return None
+    h = str(h).strip()
+    return h if h.startswith("@") else "@" + h
+
 def email_has_allowed_domain(email):
     if not email:
         return False
@@ -150,14 +155,15 @@ def ensure_user_exists(handle):
     """Create a minimal user record if missing (used when viewing profiles or messaging)."""
     if not handle:
         return
+    handle = normalize_handle(handle)
     db = get_db()
     cur = db.execute("SELECT id FROM users WHERE handle = ?", (handle,))
     if cur.fetchone():
         return
     now = now_str()
     db.execute(
-        "INSERT INTO users (handle, created_at) VALUES (?, ?)",
-        (handle, now)
+        "INSERT INTO users (handle, created_at, bio) VALUES (?, ?, ?)",
+        (handle, now, "")
     )
     db.commit()
 
@@ -171,15 +177,6 @@ def find_user_by_email(email_lower):
 @app.route("/")
 def index():
     return render_template("index.html", user=session.get("user"))
-
-@app.route("/profile")
-@login_required
-def my_profile():
-    # Redirect to the profile page for the currently signed-in user
-    user = session.get("user")
-    if not user:
-        return redirect(url_for("index"))
-    return redirect(url_for("profile", user=user))
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
@@ -198,7 +195,7 @@ def signup():
             flash(f"Only {REQUIRED_EMAIL_DOMAIN} email addresses are allowed", "danger")
             return redirect(url_for("signup"))
 
-        handle = handle_raw if handle_raw.startswith("@") else "@" + handle_raw
+        handle = normalize_handle(handle_raw)
 
         db = get_db()
         cur = db.execute("SELECT id FROM users WHERE handle = ?", (handle,))
@@ -277,6 +274,15 @@ def forgot():
         flash("If an account exists for that email, a reset link will be sent", "info")
         return redirect(url_for("login"))
     return render_template("forgot.html")
+
+# ---------------- Profile redirect for /profile ----------------
+@app.route("/profile")
+@login_required
+def my_profile():
+    user = session.get("user")
+    if not user:
+        return redirect(url_for("index"))
+    return redirect(url_for("profile", user=user))
 
 # ---------------- Feed and posts ----------------
 @app.route("/feed", methods=["GET", "POST"])
@@ -410,12 +416,14 @@ def share_post(post_id):
 @app.route("/profile/<user>")
 def profile(user):
     try:
-        # Ensure a minimal user record exists (no session changes)
-        ensure_user_exists(user)
+        if not user:
+            flash("Invalid profile requested", "danger")
+            return redirect(url_for("feed"))
 
+        user = normalize_handle(user)
+        ensure_user_exists(user)
         db = get_db()
 
-        # Fetch posts
         cur = db.execute("SELECT * FROM posts WHERE user_handle = ? ORDER BY id DESC", (user,))
         posts = []
         for r in cur.fetchall():
@@ -430,19 +438,14 @@ def profile(user):
                 "comments": json.loads(r["comments"] or "[]")
             })
 
-        # Fetch user record safely
         cur = db.execute(
             "SELECT handle, email, bio, created_at, stats_posts, stats_likes_received FROM users WHERE handle = ?",
             (user,)
         )
         row = cur.fetchone()
         if row is None:
-            # If the DB record is missing despite ensure_user_exists, create a minimal record
             now = now_str()
-            db.execute(
-                "INSERT INTO users (handle, created_at, bio) VALUES (?, ?, ?)",
-                (user, now, "")
-            )
+            db.execute("INSERT INTO users (handle, created_at, bio) VALUES (?, ?, ?)", (user, now, ""))
             db.commit()
             record = {"handle": user, "email": None, "bio": "", "created_at": now, "stats_posts": 0, "stats_likes_received": 0}
         else:
@@ -456,11 +459,8 @@ def profile(user):
             }
 
         return render_template("profile.html", user=user, posts=posts, record=record)
-
     except Exception as exc:
-        # Log full traceback so you can inspect it in Render logs
         app.logger.exception("Error rendering profile for %s: %s", user, exc)
-        # Show a friendly error page instead of a raw 500
         flash("Sorry — something went wrong loading that profile. The error has been logged.", "danger")
         return redirect(url_for("feed"))
 
