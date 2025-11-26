@@ -409,24 +409,60 @@ def share_post(post_id):
 # ---------------- Profile ----------------
 @app.route("/profile/<user>")
 def profile(user):
-    ensure_user_exists(user)
-    db = get_db()
-    cur = db.execute("SELECT * FROM posts WHERE user_handle = ? ORDER BY id DESC", (user,))
-    posts = []
-    for r in cur.fetchall():
-        posts.append({
-            "id": r["id"],
-            "user": r["user_handle"],
-            "text": r["text"],
-            "image": r["image"],
-            "time": r["time"],
-            "likes": r["likes"],
-            "liked_by": json.loads(r["liked_by"] or "[]"),
-            "comments": json.loads(r["comments"] or "[]")
-        })
-    cur = db.execute("SELECT handle, email, bio, created_at, stats_posts, stats_likes_received FROM users WHERE handle = ?", (user,))
-    record = cur.fetchone()
-    return render_template("profile.html", user=user, posts=posts, record=record)
+    try:
+        # Ensure a minimal user record exists (no session changes)
+        ensure_user_exists(user)
+
+        db = get_db()
+
+        # Fetch posts
+        cur = db.execute("SELECT * FROM posts WHERE user_handle = ? ORDER BY id DESC", (user,))
+        posts = []
+        for r in cur.fetchall():
+            posts.append({
+                "id": r["id"],
+                "user": r["user_handle"],
+                "text": r["text"],
+                "image": r["image"],
+                "time": r["time"],
+                "likes": r["likes"],
+                "liked_by": json.loads(r["liked_by"] or "[]"),
+                "comments": json.loads(r["comments"] or "[]")
+            })
+
+        # Fetch user record safely
+        cur = db.execute(
+            "SELECT handle, email, bio, created_at, stats_posts, stats_likes_received FROM users WHERE handle = ?",
+            (user,)
+        )
+        row = cur.fetchone()
+        if row is None:
+            # If the DB record is missing despite ensure_user_exists, create a minimal record
+            now = now_str()
+            db.execute(
+                "INSERT INTO users (handle, created_at, bio) VALUES (?, ?, ?)",
+                (user, now, "")
+            )
+            db.commit()
+            record = {"handle": user, "email": None, "bio": "", "created_at": now, "stats_posts": 0, "stats_likes_received": 0}
+        else:
+            record = {
+                "handle": row["handle"],
+                "email": row["email"],
+                "bio": row["bio"],
+                "created_at": row["created_at"],
+                "stats_posts": row["stats_posts"],
+                "stats_likes_received": row["stats_likes_received"]
+            }
+
+        return render_template("profile.html", user=user, posts=posts, record=record)
+
+    except Exception as exc:
+        # Log full traceback so you can inspect it in Render logs
+        app.logger.exception("Error rendering profile for %s: %s", user, exc)
+        # Show a friendly error page instead of a raw 500
+        flash("Sorry — something went wrong loading that profile. The error has been logged.", "danger")
+        return redirect(url_for("feed"))
 
 @app.route("/profile/edit", methods=["GET", "POST"])
 @login_required
