@@ -1,16 +1,15 @@
 # app.py
 """
-Flask + SQLite social demo (robust profile handling).
-This file is a corrected, defensive version of your app that:
-- Normalizes handles everywhere
-- Avoids modifying session in profile view
-- Logs and returns friendly errors instead of crashing on profile views
-- Keeps the same features: signup/login, feed, posts, likes, comments, share,
-  follow/unfollow, chat, uploads, debug endpoints
+Fixed Flask app using SQLite only (no data.json).
+- Normalizes session["user"] on signup/login
+- /profile redirects to signed-in user's profile
+- /profile/<user> returns a plain dict 'record' with followers/following/stats so templates like your profile.html work
+- Defensive error handling and logging
+- Uploads saved to static/uploads
+- SQLite DB stored at data/app.db (data/ folder created automatically)
 Notes:
-- DB file: data/app.db
-- Uploads: static/uploads
-- Set FLASK_SECRET in environment for production
+- Set FLASK_SECRET in environment for production sessions.
+- On ephemeral hosts (Render) attach persistent storage or use a managed DB.
 """
 
 import os
@@ -205,7 +204,7 @@ def signup():
         )
         db.commit()
 
-        session["user"] = handle
+        session["user"] = normalize_handle(handle)
         app.logger.debug("session['user'] set to: %r (signup)", session.get("user"))
         flash("Account created and signed in", "success")
         return redirect(url_for("feed"))
@@ -270,14 +269,21 @@ def forgot():
         return redirect(url_for("login"))
     return render_template("forgot.html")
 
+# ---------- Profile redirect for /profile ----------
+@app.route("/profile")
+@login_required
+def my_profile():
+    user = session.get("user")
+    if not user:
+        return redirect(url_for("index"))
+    user = normalize_handle(user)
+    return redirect(url_for("profile", user=user))
+
 # ---------- Feed (following or global toggle) ----------
 @app.route("/feed", methods=["GET", "POST"])
 @login_required
 def feed():
     user = session.get("user")
-    if user is None:
-        return redirect(url_for("index"))
-
     db = get_db()
 
     # POST: create a new post
@@ -320,10 +326,10 @@ def feed():
         posts.append({
             "id": r["id"],
             "user": r["user_handle"],
-            "text": r["text"],
+            "text": r["text"] or "",
             "image": r["image"],
             "time": r["time"],
-            "likes": r["likes"],
+            "likes": r["likes"] or 0,
             "liked_by": json.loads(r["liked_by"] or "[]"),
             "comments": json.loads(r["comments"] or "[]")
         })
@@ -409,11 +415,10 @@ def share_post(post_id):
 @app.route("/profile/<user>")
 def profile(user):
     """
-    Defensive profile view:
+    Robust profile view:
     - normalize incoming handle
-    - ensure DB record exists (creates minimal record if missing)
-    - fetch posts and user record
-    - log and show friendly message on unexpected errors
+    - ensure DB record exists
+    - return a plain dict 'record' with followers/following/stats so template can use record.get(...)
     """
     try:
         if not user:
@@ -424,29 +429,52 @@ def profile(user):
         ensure_user_on_db(user)
 
         db = get_db()
-        cur = db.execute("SELECT id, user_handle, text, image, time, likes, liked_by, comments FROM posts WHERE user_handle = ? ORDER BY id DESC", (user,))
+
+        # Fetch posts
+        cur = db.execute(
+            "SELECT id, user_handle, text, image, time, likes, liked_by, comments "
+            "FROM posts WHERE user_handle = ? ORDER BY id DESC", (user,)
+        )
         posts = []
         for r in cur.fetchall():
             posts.append({
                 "id": r["id"],
                 "user": r["user_handle"],
-                "text": r["text"],
+                "text": r["text"] or "",
                 "image": r["image"],
                 "time": r["time"],
-                "likes": r["likes"],
+                "likes": r["likes"] or 0,
                 "liked_by": json.loads(r["liked_by"] or "[]"),
                 "comments": json.loads(r["comments"] or "[]")
             })
 
-        cur = db.execute("SELECT handle, email, bio, created, stats_posts, stats_likes_received FROM users WHERE handle = ?", (user,))
+        # Fetch user row and convert to dict
+        cur = db.execute(
+            "SELECT handle, email, bio, created, stats_posts, stats_likes_received FROM users WHERE handle = ?",
+            (user,)
+        )
         row = cur.fetchone()
-        record = dict(row) if row else {"handle": user, "email": None, "bio": "", "created": now_str(), "stats_posts": 0, "stats_likes_received": 0}
+        if row:
+            record = {
+                "handle": row["handle"],
+                "email": row["email"],
+                "bio": row["bio"] or "",
+                "created": row["created"] or now_str(),
+                "stats": {"posts": row["stats_posts"] or 0, "likes_received": row["stats_likes_received"] or 0}
+            }
+        else:
+            record = {"handle": user, "email": None, "bio": "", "created": now_str(), "stats": {"posts": 0, "likes_received": 0}}
+
+        # Populate followers and following lists from follows table
+        followers = [r["follower"] for r in db.execute("SELECT follower FROM follows WHERE following = ?", (user,)).fetchall()]
+        following = [r["following"] for r in db.execute("SELECT following FROM follows WHERE follower = ?", (user,)).fetchall()]
+        record["followers"] = followers
+        record["following"] = following
 
         return render_template("profile.html", user=user, posts=posts, record=record)
     except Exception as exc:
         app.logger.exception("Error rendering profile for %s: %s", user, exc)
         flash("Sorry — something went wrong loading that profile. The error has been logged.", "danger")
-        # Redirect to feed rather than raising a 500 so user isn't stuck
         return redirect(url_for("feed"))
 
 # ---------- Profile edit ----------
